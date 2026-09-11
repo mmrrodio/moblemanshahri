@@ -1,5 +1,5 @@
 /* ========================================
-   مبلمان شهری جعفری - Main JS v3 (fixed)
+   مبلمان شهری جعفری - Main JS v4
    ======================================== */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -41,90 +41,109 @@ document.addEventListener('DOMContentLoaded', () => {
     document.documentElement.lang = lang === 'fa' ? 'fa' : (lang === 'ar' ? 'ar' : 'en');
   }
 
-  // ----- Music: continuous across pages (no restart) -----
+  // ----- Music: continuous across pages -----
   const audio = document.getElementById('bg-music');
   const musicBtn = document.getElementById('music-toggle');
 
-  function restoreMusicState() {
-    if (!audio) return;
-    audio.volume = 0.4;
-    audio.loop = true;
-
-    const wasPlaying = localStorage.getItem('musicPlaying') === 'true';
-    const savedTime = parseFloat(localStorage.getItem('musicTime') || '0');
-
-    if (wasPlaying) {
-      if (savedTime > 0 && !isNaN(savedTime)) {
-        audio.currentTime = savedTime;
-      }
-      const p = audio.play();
-      if (p !== undefined) {
-        p.then(() => {
-          if (musicBtn) {
-            musicBtn.classList.add('playing');
-            musicBtn.innerHTML = '⏸';
-          }
-        }).catch(() => {});
-      }
+  function updateMusicBtn(playing) {
+    if (!musicBtn) return;
+    if (playing) {
+      musicBtn.classList.add('playing');
+      musicBtn.innerHTML = '⏸';
+    } else {
+      musicBtn.classList.remove('playing');
+      musicBtn.innerHTML = '♪';
     }
   }
 
   function saveMusicState() {
     if (!audio) return;
-    localStorage.setItem('musicPlaying', audio.paused ? 'false' : 'true');
-    if (!audio.paused) {
-      localStorage.setItem('musicTime', audio.currentTime.toString());
+    try {
+      localStorage.setItem('musicPlaying', audio.paused ? 'false' : 'true');
+      if (!audio.paused && !isNaN(audio.currentTime)) {
+        localStorage.setItem('musicTime', String(audio.currentTime));
+      }
+    } catch (e) {}
+  }
+
+  function tryPlayFromSaved() {
+    if (!audio) return;
+    audio.volume = 0.4;
+    audio.loop = true;
+
+    const wasPlaying = localStorage.getItem('musicPlaying') === 'true';
+    if (!wasPlaying) return;
+
+    const savedTime = parseFloat(localStorage.getItem('musicTime') || '0');
+    if (savedTime > 0.5 && !isNaN(savedTime)) {
+      try {
+        audio.currentTime = savedTime;
+      } catch (e) {}
+    }
+
+    const p = audio.play();
+    if (p !== undefined) {
+      p.then(() => {
+        updateMusicBtn(true);
+      }).catch(() => {});
     }
   }
 
-  setInterval(saveMusicState, 800);
-  window.addEventListener('beforeunload', saveMusicState);
-  window.addEventListener('pagehide', saveMusicState);
+  if (audio) {
+    setInterval(saveMusicState, 600);
+    window.addEventListener('beforeunload', saveMusicState);
+    window.addEventListener('pagehide', saveMusicState);
+    audio.addEventListener('timeupdate', () => {
+      if (!audio.paused) saveMusicState();
+    });
+    audio.addEventListener('pause', saveMusicState);
+    audio.addEventListener('play', () => {
+      localStorage.setItem('musicPlaying', 'true');
+      updateMusicBtn(true);
+    });
+  }
 
-  function onFirstInteract() {
+  function onUserGesture() {
     if (!audio) return;
-    if (localStorage.getItem('musicPlaying') !== 'true') {
+    if (localStorage.getItem('musicPlaying') === 'true' && audio.paused) {
+      tryPlayFromSaved();
+    } else if (localStorage.getItem('musicPlaying') !== 'true' && audio.paused) {
       audio.volume = 0.4;
       audio.loop = true;
-      const p = audio.play();
-      if (p !== undefined) {
-        p.then(() => {
-          localStorage.setItem('musicPlaying', 'true');
-          if (musicBtn) {
-            musicBtn.classList.add('playing');
-            musicBtn.innerHTML = '⏸';
-          }
-        }).catch(() => {});
-      }
+      audio.play().then(() => {
+        localStorage.setItem('musicPlaying', 'true');
+        updateMusicBtn(true);
+      }).catch(() => {});
     }
-    document.body.removeEventListener('click', onFirstInteract);
-    document.body.removeEventListener('touchstart', onFirstInteract);
   }
-  document.body.addEventListener('click', onFirstInteract, { once: true });
-  document.body.addEventListener('touchstart', onFirstInteract, { once: true });
+  document.body.addEventListener('click', onUserGesture, { once: false });
+  document.body.addEventListener('touchstart', onUserGesture, { once: false });
 
-  restoreMusicState();
+  tryPlayFromSaved();
 
   if (musicBtn && audio) {
     musicBtn.addEventListener('click', (e) => {
       e.stopPropagation();
+      e.preventDefault();
       if (audio.paused) {
+        const savedTime = parseFloat(localStorage.getItem('musicTime') || '0');
+        if (savedTime > 0.5 && !isNaN(savedTime) && Math.abs(audio.currentTime - savedTime) > 1) {
+          try { audio.currentTime = savedTime; } catch (err) {}
+        }
         audio.play().then(() => {
           localStorage.setItem('musicPlaying', 'true');
-          musicBtn.classList.add('playing');
-          musicBtn.innerHTML = '⏸';
+          updateMusicBtn(true);
         }).catch(() => {});
       } else {
         audio.pause();
         localStorage.setItem('musicPlaying', 'false');
-        localStorage.setItem('musicTime', audio.currentTime.toString());
-        musicBtn.classList.remove('playing');
-        musicBtn.innerHTML = '♪';
+        localStorage.setItem('musicTime', String(audio.currentTime));
+        updateMusicBtn(false);
       }
     });
   }
 
-  // ----- Splash animation (only on index) -----
+  // ----- Splash animation (only on index, first visit) -----
   const splash = document.getElementById('splash');
   if (splash) {
     const alreadySeen = sessionStorage.getItem('splashSeen') === 'true';
@@ -134,24 +153,24 @@ document.addEventListener('DOMContentLoaded', () => {
       const words = splash.querySelectorAll('.splash-word');
       const enLine = splash.querySelector('.splash-en');
       const imgWrap = splash.querySelector('.splash-img-wrap');
-      let delay = 350;
+      let delay = 400;
 
       words.forEach((w, i) => {
-        setTimeout(() => w.classList.add('show'), delay + i * 520);
+        setTimeout(() => w.classList.add('show'), delay + i * 480);
       });
 
       setTimeout(() => {
         if (enLine) enLine.classList.add('show');
-      }, delay + words.length * 520 + 250);
+      }, delay + words.length * 480 + 300);
 
       setTimeout(() => {
         if (imgWrap) imgWrap.classList.add('show');
-      }, delay + words.length * 520 + 900);
+      }, delay + words.length * 480 + 1100);
 
       setTimeout(() => {
         splash.classList.add('hide');
         sessionStorage.setItem('splashSeen', 'true');
-      }, delay + words.length * 520 + 3800);
+      }, delay + words.length * 480 + 5200);
     }
   }
 
@@ -235,7 +254,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (lightbox) lightbox.addEventListener('click', e => { if (e.target === lightbox) lightbox.classList.remove('active'); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && lightbox) lightbox.classList.remove('active'); });
 
-  // Duplicate strip for seamless loop
   const strip = document.querySelector('.gallery-strip');
   if (strip) {
     setTimeout(() => {
