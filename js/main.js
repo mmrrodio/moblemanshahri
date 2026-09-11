@@ -1,5 +1,5 @@
 /* ========================================
-   مبلمان شهری جعفری - Main JS v2
+   مبلمان شهری جعفری - Main JS v3 (fixed)
    ======================================== */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -37,54 +37,87 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.lang-btn').forEach(b => {
       b.classList.toggle('active', b.dataset.lang === lang);
     });
-    // Update direction
     document.documentElement.dir = (lang === 'fa') ? 'rtl' : 'ltr';
     document.documentElement.lang = lang === 'fa' ? 'fa' : (lang === 'ar' ? 'ar' : 'en');
   }
 
-  // ----- Music (better persistence attempt) -----
+  // ----- Music: continuous across pages (no restart) -----
   const audio = document.getElementById('bg-music');
   const musicBtn = document.getElementById('music-toggle');
-  let musicStarted = sessionStorage.getItem('musicStarted') === 'true';
 
-  function tryPlay() {
+  function restoreMusicState() {
     if (!audio) return;
     audio.volume = 0.4;
     audio.loop = true;
-    const p = audio.play();
-    if (p !== undefined) {
-      p.then(() => {
-        musicStarted = true;
-        sessionStorage.setItem('musicStarted', 'true');
-        if (musicBtn) {
-          musicBtn.classList.add('playing');
-          musicBtn.innerHTML = '⏸';
-        }
-      }).catch(() => {});
+
+    const wasPlaying = localStorage.getItem('musicPlaying') === 'true';
+    const savedTime = parseFloat(localStorage.getItem('musicTime') || '0');
+
+    if (wasPlaying) {
+      if (savedTime > 0 && !isNaN(savedTime)) {
+        audio.currentTime = savedTime;
+      }
+      const p = audio.play();
+      if (p !== undefined) {
+        p.then(() => {
+          if (musicBtn) {
+            musicBtn.classList.add('playing');
+            musicBtn.innerHTML = '⏸';
+          }
+        }).catch(() => {});
+      }
     }
   }
 
-  // Resume if already started in this session
-  if (musicStarted) {
-    tryPlay();
+  function saveMusicState() {
+    if (!audio) return;
+    localStorage.setItem('musicPlaying', audio.paused ? 'false' : 'true');
+    if (!audio.paused) {
+      localStorage.setItem('musicTime', audio.currentTime.toString());
+    }
   }
 
-  // First interaction starts music
+  setInterval(saveMusicState, 800);
+  window.addEventListener('beforeunload', saveMusicState);
+  window.addEventListener('pagehide', saveMusicState);
+
   function onFirstInteract() {
-    if (!musicStarted) tryPlay();
+    if (!audio) return;
+    if (localStorage.getItem('musicPlaying') !== 'true') {
+      audio.volume = 0.4;
+      audio.loop = true;
+      const p = audio.play();
+      if (p !== undefined) {
+        p.then(() => {
+          localStorage.setItem('musicPlaying', 'true');
+          if (musicBtn) {
+            musicBtn.classList.add('playing');
+            musicBtn.innerHTML = '⏸';
+          }
+        }).catch(() => {});
+      }
+    }
     document.body.removeEventListener('click', onFirstInteract);
     document.body.removeEventListener('touchstart', onFirstInteract);
   }
   document.body.addEventListener('click', onFirstInteract, { once: true });
   document.body.addEventListener('touchstart', onFirstInteract, { once: true });
 
+  restoreMusicState();
+
   if (musicBtn && audio) {
     musicBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (audio.paused) {
-        tryPlay();
+        audio.play().then(() => {
+          localStorage.setItem('musicPlaying', 'true');
+          musicBtn.classList.add('playing');
+          musicBtn.innerHTML = '⏸';
+        }).catch(() => {});
       } else {
         audio.pause();
+        localStorage.setItem('musicPlaying', 'false');
+        localStorage.setItem('musicTime', audio.currentTime.toString());
         musicBtn.classList.remove('playing');
         musicBtn.innerHTML = '♪';
       }
@@ -100,21 +133,87 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       const words = splash.querySelectorAll('.splash-word');
       const enLine = splash.querySelector('.splash-en');
-      let delay = 400;
+      const imgWrap = splash.querySelector('.splash-img-wrap');
+      let delay = 350;
+
       words.forEach((w, i) => {
-        setTimeout(() => w.classList.add('show'), delay + i * 480);
+        setTimeout(() => w.classList.add('show'), delay + i * 520);
       });
+
       setTimeout(() => {
         if (enLine) enLine.classList.add('show');
-      }, delay + words.length * 480 + 200);
+      }, delay + words.length * 520 + 250);
 
-      // Hide after ~4.5 seconds
+      setTimeout(() => {
+        if (imgWrap) imgWrap.classList.add('show');
+      }, delay + words.length * 520 + 900);
+
       setTimeout(() => {
         splash.classList.add('hide');
         sessionStorage.setItem('splashSeen', 'true');
-      }, 4800);
+      }, delay + words.length * 520 + 3800);
     }
   }
+
+  // ----- Auto-load gallery images from folders -----
+  function loadGalleryImages() {
+    const page = (window.location.pathname.split('/').pop() || '').replace('.html', '');
+    const map = {
+      'traffic': 'traffic',
+      'lighting': 'lighting',
+      'rest': 'rest',
+      'info': 'info',
+      'services': 'services',
+      'security': 'security',
+      'artistic': 'artistic',
+      'custom': 'custom',
+      'about': 'about'
+    };
+    const folder = map[page];
+    if (!folder) return;
+
+    const mainItems = document.querySelectorAll('.gallery-main .gallery-item');
+    const stripItems = document.querySelectorAll('.gallery-strip .strip-item');
+
+    mainItems.forEach((item, i) => {
+      const num = String(i + 1).padStart(2, '0');
+      const src = 'images/' + folder + '/' + num + '.jpg';
+      const img = new Image();
+      img.onload = function() {
+        const placeholder = item.querySelector('.img-placeholder');
+        if (placeholder) placeholder.remove();
+        let existing = item.querySelector('img');
+        if (!existing) {
+          existing = document.createElement('img');
+          existing.alt = folder + ' ' + num;
+          item.insertBefore(existing, item.firstChild);
+        }
+        existing.src = src;
+      };
+      img.onerror = function() {};
+      img.src = src;
+    });
+
+    stripItems.forEach((item, i) => {
+      const num = String(i + 4).padStart(2, '0');
+      const src = 'images/' + folder + '/' + num + '.jpg';
+      const img = new Image();
+      img.onload = function() {
+        const placeholder = item.querySelector('.img-placeholder');
+        if (placeholder) placeholder.remove();
+        let existing = item.querySelector('img');
+        if (!existing) {
+          existing = document.createElement('img');
+          existing.alt = folder + ' ' + num;
+          item.appendChild(existing);
+        }
+        existing.src = src;
+      };
+      img.onerror = function() {};
+      img.src = src;
+    });
+  }
+  loadGalleryImages();
 
   // ----- Lightbox -----
   const lightbox = document.getElementById('lightbox');
@@ -139,6 +238,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Duplicate strip for seamless loop
   const strip = document.querySelector('.gallery-strip');
   if (strip) {
-    strip.innerHTML = strip.innerHTML + strip.innerHTML;
+    setTimeout(() => {
+      strip.innerHTML = strip.innerHTML + strip.innerHTML;
+    }, 400);
   }
 });
