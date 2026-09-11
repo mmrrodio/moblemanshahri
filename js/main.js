@@ -1,75 +1,88 @@
 /* ========================================
-   مبلمان شهری جعفری - Main JS
+   مبلمان شهری جعفری - Main JS v2
    ======================================== */
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Mobile menu
+  // ----- Mobile menu -----
   const toggle = document.querySelector('.menu-toggle');
   const nav = document.querySelector('.nav');
   if (toggle && nav) {
-    toggle.addEventListener('click', () => {
-      nav.classList.toggle('open');
-    });
+    toggle.addEventListener('click', () => nav.classList.toggle('open'));
   }
 
-  // Active nav link
-  const currentPage = window.location.pathname.split('/').pop() || 'index.html';
-  document.querySelectorAll('.nav a').forEach(link => {
-    const href = link.getAttribute('href');
-    if (href === currentPage || (currentPage === '' && href === 'index.html')) {
-      link.classList.add('active');
+  // ----- Active nav -----
+  const current = (window.location.pathname.split('/').pop() || 'index.html').toLowerCase();
+  document.querySelectorAll('.nav a').forEach(a => {
+    const href = (a.getAttribute('href') || '').toLowerCase();
+    if (href === current || (current === '' && href === 'index.html')) {
+      a.classList.add('active');
     }
   });
 
-  // ========== Music: play only on first user interaction, persist state ==========
+  // ----- Language switcher -----
+  const savedLang = localStorage.getItem('siteLang') || 'fa';
+  setLanguage(savedLang);
+
+  document.querySelectorAll('.lang-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const lang = btn.dataset.lang;
+      setLanguage(lang);
+      localStorage.setItem('siteLang', lang);
+    });
+  });
+
+  function setLanguage(lang) {
+    document.body.classList.remove('lang-fa', 'lang-en', 'lang-ar');
+    document.body.classList.add('lang-' + lang);
+    document.querySelectorAll('.lang-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.lang === lang);
+    });
+    // Update direction
+    document.documentElement.dir = (lang === 'fa') ? 'rtl' : 'ltr';
+    document.documentElement.lang = lang === 'fa' ? 'fa' : (lang === 'ar' ? 'ar' : 'en');
+  }
+
+  // ----- Music (better persistence attempt) -----
   const audio = document.getElementById('bg-music');
   const musicBtn = document.getElementById('music-toggle');
-  let musicStarted = false;
+  let musicStarted = sessionStorage.getItem('musicStarted') === 'true';
 
-  // Check if music was already started in this session
-  if (sessionStorage.getItem('musicStarted') === 'true' && audio) {
-    // Attempt to resume (may be blocked by browser, but we try)
-    audio.volume = 0.35;
-    const playPromise = audio.play();
-    if (playPromise !== undefined) {
-      playPromise.then(() => {
+  function tryPlay() {
+    if (!audio) return;
+    audio.volume = 0.4;
+    audio.loop = true;
+    const p = audio.play();
+    if (p !== undefined) {
+      p.then(() => {
         musicStarted = true;
-        if (musicBtn) musicBtn.classList.add('playing');
-        if (musicBtn) musicBtn.innerHTML = '⏸';
-      }).catch(() => {
-        // Autoplay blocked – wait for click
-      });
+        sessionStorage.setItem('musicStarted', 'true');
+        if (musicBtn) {
+          musicBtn.classList.add('playing');
+          musicBtn.innerHTML = '⏸';
+        }
+      }).catch(() => {});
     }
   }
 
-  function startMusic() {
-    if (!audio || musicStarted) return;
-    audio.volume = 0.35;
-    audio.play().then(() => {
-      musicStarted = true;
-      sessionStorage.setItem('musicStarted', 'true');
-      if (musicBtn) {
-        musicBtn.classList.add('playing');
-        musicBtn.innerHTML = '⏸';
-      }
-    }).catch(err => console.log('Music play blocked:', err));
+  // Resume if already started in this session
+  if (musicStarted) {
+    tryPlay();
   }
 
-  // First click anywhere starts music
-  document.body.addEventListener('click', function firstClick() {
-    startMusic();
-    document.body.removeEventListener('click', firstClick);
-  }, { once: true });
+  // First interaction starts music
+  function onFirstInteract() {
+    if (!musicStarted) tryPlay();
+    document.body.removeEventListener('click', onFirstInteract);
+    document.body.removeEventListener('touchstart', onFirstInteract);
+  }
+  document.body.addEventListener('click', onFirstInteract, { once: true });
+  document.body.addEventListener('touchstart', onFirstInteract, { once: true });
 
-  // Toggle button
   if (musicBtn && audio) {
     musicBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (audio.paused) {
-        audio.play();
-        musicBtn.classList.add('playing');
-        musicBtn.innerHTML = '⏸';
-        sessionStorage.setItem('musicStarted', 'true');
+        tryPlay();
       } else {
         audio.pause();
         musicBtn.classList.remove('playing');
@@ -78,15 +91,40 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ========== Lightbox for gallery ==========
+  // ----- Splash animation (only on index) -----
+  const splash = document.getElementById('splash');
+  if (splash) {
+    const alreadySeen = sessionStorage.getItem('splashSeen') === 'true';
+    if (alreadySeen) {
+      splash.classList.add('hide');
+    } else {
+      const words = splash.querySelectorAll('.splash-word');
+      const enLine = splash.querySelector('.splash-en');
+      let delay = 400;
+      words.forEach((w, i) => {
+        setTimeout(() => w.classList.add('show'), delay + i * 480);
+      });
+      setTimeout(() => {
+        if (enLine) enLine.classList.add('show');
+      }, delay + words.length * 480 + 200);
+
+      // Hide after ~4.5 seconds
+      setTimeout(() => {
+        splash.classList.add('hide');
+        sessionStorage.setItem('splashSeen', 'true');
+      }, 4800);
+    }
+  }
+
+  // ----- Lightbox -----
   const lightbox = document.getElementById('lightbox');
   const lightboxImg = document.getElementById('lightbox-img');
-  const lightboxClose = document.querySelector('.lightbox-close');
+  const closeBtn = document.querySelector('.lightbox-close');
 
   document.querySelectorAll('.gallery-item, .strip-item').forEach(item => {
     item.addEventListener('click', () => {
       const img = item.querySelector('img');
-      if (img && img.src && !img.src.includes('placeholder')) {
+      if (img && img.src && !img.classList.contains('placeholder')) {
         if (lightbox && lightboxImg) {
           lightboxImg.src = img.src;
           lightbox.classList.add('active');
@@ -94,28 +132,13 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   });
+  if (closeBtn) closeBtn.addEventListener('click', () => lightbox.classList.remove('active'));
+  if (lightbox) lightbox.addEventListener('click', e => { if (e.target === lightbox) lightbox.classList.remove('active'); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && lightbox) lightbox.classList.remove('active'); });
 
-  if (lightboxClose) {
-    lightboxClose.addEventListener('click', () => {
-      lightbox.classList.remove('active');
-    });
-  }
-
-  if (lightbox) {
-    lightbox.addEventListener('click', (e) => {
-      if (e.target === lightbox) lightbox.classList.remove('active');
-    });
-  }
-
-  // Escape key closes lightbox
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && lightbox) lightbox.classList.remove('active');
-  });
-
-  // Duplicate strip items for seamless infinite scroll
+  // Duplicate strip for seamless loop
   const strip = document.querySelector('.gallery-strip');
   if (strip) {
-    const items = strip.innerHTML;
-    strip.innerHTML = items + items; // duplicate for continuous loop
+    strip.innerHTML = strip.innerHTML + strip.innerHTML;
   }
 });
